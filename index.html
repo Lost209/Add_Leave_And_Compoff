@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0a0d1f">
+    <title>Leave Opening Balance Import</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="bg-mesh" aria-hidden="true"></div>
+    <main class="container">
+        <header>
+            <div class="brand">
+                <span class="brand-mark" aria-hidden="true"></span>
+                <span class="brand-text">factoHR · Bulk Import</span>
+            </div>
+            <h1>Leave Opening Balance</h1>
+            <p class="subtitle">Add an employee's opening leave balance.</p>
+        </header>
+
+        <!--
+            Static defaults (these are also used when the unlocked admin panel is hidden).
+            The "admin" panel below just lets these be edited at runtime.
+        -->
+        <input type="hidden" id="api-url" value="https://we.factohr.com/vspl/api/fileImport/doFileImport">
+        <input type="hidden" id="aqn" value="Payroll.Domain.Attendance.LeaveOpeningBalanceMaster, Payroll.Domain, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
+        <input type="hidden" id="import-bg" value="false">
+        <input type="hidden" id="clear-cache" value="true">
+
+        <details class="api-config" id="admin-panel">
+            <summary>
+                <span class="summary-label">API Config</span>
+                <span class="lock-badge" id="lock-badge" aria-hidden="true">🔒</span>
+            </summary>
+
+            <!-- Locked state: password prompt -->
+            <div class="lock-pane" id="lock-pane">
+                <p class="lock-hint">This section is restricted. Enter the admin password to view or edit.</p>
+                <div class="lock-row">
+                    <input type="password" id="admin-password" placeholder="Admin password" autocomplete="off">
+                    <button type="button" id="admin-unlock">Unlock</button>
+                </div>
+                <p class="lock-error" id="lock-error" hidden>Incorrect password.</p>
+            </div>
+
+            <!-- Unlocked state: actual config -->
+            <div class="config-pane" id="config-pane" hidden>
+                <div class="form-group">
+                    <label for="api-url-edit">API URL</label>
+                    <input type="text" id="api-url-edit">
+                </div>
+                <div class="form-group">
+                    <label for="aqn-edit">AssemblyQualifiedName</label>
+                    <input type="text" id="aqn-edit">
+                </div>
+                <div class="row-2">
+                    <div class="form-group">
+                        <label for="import-bg-edit">ImportInBackground</label>
+                        <input type="text" id="import-bg-edit">
+                    </div>
+                    <div class="form-group">
+                        <label for="clear-cache-edit">ClearCacheAfterFileImport</label>
+                        <input type="text" id="clear-cache-edit">
+                    </div>
+                </div>
+                <button type="button" id="admin-lock" class="btn-link">Lock again</button>
+            </div>
+        </details>
+
+        <form id="import-form" novalidate>
+            <div id="fields"></div>
+
+            <div class="actions">
+                <button type="reset" class="btn-secondary">Reset</button>
+                <button type="submit" id="submit-btn">Submit</button>
+            </div>
+        </form>
+
+        <section id="result-panel" class="result-panel hidden" aria-live="polite">
+            <div id="result-banner" class="result-banner"></div>
+            <details class="result-raw">
+                <summary>Raw response</summary>
+                <pre id="response"></pre>
+            </details>
+        </section>
+    </main>
+    <script src="script.js"></script>
+</body>
+</html>
