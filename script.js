@@ -342,6 +342,10 @@ function setupAdmin() {
     });
     document.getElementById('admin-lock').addEventListener('click', () => {
         sessionStorage.removeItem(SESSION_KEY);
+        // Strip ?admin=1 (and similar) from the URL so a refresh stays locked.
+        const url = new URL(window.location.href);
+        url.searchParams.delete('admin');
+        window.history.replaceState({}, '', url.toString());
         showAdminLocked();
     });
 }
