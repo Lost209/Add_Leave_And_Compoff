@@ -186,6 +186,10 @@ function showResult({ kind, title, message, raw }) {
     banner.appendChild(body);
 
     responseEl.textContent = raw;
+
+    requestAnimationFrame(() => {
+        panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
 }
 
 function setSubmitting(busy) {
