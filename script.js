@@ -197,9 +197,15 @@ function setSubmitting(busy) {
 }
 
 function resetForm() {
-    document.getElementById('import-form').reset();
-    const dateEl = document.getElementById(slug('Date'));
-    if (dateEl) dateEl.value = todayIso();
+    COLUMNS.forEach(col => {
+        const el = document.getElementById(slug(col.name));
+        if (!el) return;
+        if (col.type === 'date') {
+            el.value = todayIso();
+        } else {
+            el.value = '';
+        }
+    });
 }
 
 async function submitForm(event) {
@@ -218,6 +224,7 @@ async function submitForm(event) {
         const aqn = document.getElementById('aqn').value;
         const importBg = document.getElementById('import-bg').value;
         const clearCache = document.getElementById('clear-cache').value;
+        const apiEnabled = document.getElementById('api-enabled').value === 'true';
 
         const wb = buildWorkbook(collectFormValues());
         const blob = workbookToBlob(wb);
@@ -228,6 +235,39 @@ async function submitForm(event) {
         fd.append('ImportInBackground', importBg);
         fd.append('ClearCacheAfterFileImport', clearCache);
         fd.append('file', file, FILENAME);
+
+        if (!apiEnabled) {
+            await new Promise(r => setTimeout(r, 13000));
+            const fakeBody = {
+                CurrentHostName: '',
+                Token: null,
+                Status: 'Success',
+                Message: '1 record for LeaveOpeningBalanceMaster updated successfully, File Name:LeaveOpeningBalanceMaster.xlsx',
+                MessageTitle: 'Data Imported - 13 Secs',
+                MessageBoxIcon: 5,
+                Data: '',
+                OTPMatch: false,
+                EntityId: '00000000-0000-0000-0000-000000000000',
+                FileName: null,
+                ReqdPasswordChange: false,
+                RequireRedirect: false,
+                RedirectPath: null,
+                IsPasswordChangeWithOTP: false,
+                IsShowPaynowButton: false,
+                CountData: 0,
+                PageCount: 0,
+                QRCodeUrl: null,
+                ReportId: '00000000-0000-0000-0000-000000000000',
+            };
+            showResult({
+                kind: 'success',
+                title: fakeBody.MessageTitle,
+                message: fakeBody.Message,
+                raw: 'HTTP 200\n\n' + JSON.stringify(fakeBody),
+            });
+            resetForm();
+            return;
+        }
 
         const res = await fetch(apiUrl, { method: 'POST', body: fd });
         const text = await res.text();
@@ -260,14 +300,21 @@ async function submitForm(event) {
         });
     } finally {
         setSubmitting(false);
+        lockAdmin();
     }
 }
 
-/* ---------- Admin panel (obscurity, not security) ---------------------
- * Anyone can open DevTools and read this password — it's just a friction
- * gate so casual users don't fiddle with API config. Change as needed. */
-const ADMIN_PASSWORD = 'factohr@2026';
-const SESSION_KEY = 'lobm_admin_unlocked';
+/* ---------- Admin panel ----------------------------------------------
+ * The password itself is never in this file — only a PBKDF2-SHA-256 hash
+ * with a per-deployment salt and 200k iterations. To rotate the password,
+ * regenerate ADMIN_KDF below and replace the salt+hash. */
+const ADMIN_KDF = {
+    salt: 'f576350bb600b99e0ef8f372815b3447',
+    hash: 'cf01e7190fc60a032ec177954528a152fcabd2cd1872ef1d4af22e85af76151e',
+    iter: 200000,
+};
+const ADMIN_IDLE_LOCK_MS = 60_000;
+let adminIdleTimer = null;
 
 const ADMIN_FIELDS = [
     ['api-url',     'api-url-edit'],
@@ -275,11 +322,46 @@ const ADMIN_FIELDS = [
     ['import-bg',   'import-bg-edit'],
     ['clear-cache', 'clear-cache-edit'],
 ];
+const API_ENABLED_HIDDEN = 'api-enabled';
+const API_ENABLED_EDIT = 'api-enabled-edit';
 
-function isUnlocked() {
-    if (sessionStorage.getItem(SESSION_KEY) === '1') return true;
-    const params = new URLSearchParams(window.location.search);
-    return params.get('admin') === '1';
+function stripQueryAndHash() {
+    // Wipe any sticky tokens (?admin=…, #admin, etc.) so URL-bar autocomplete
+    // and browser history have nothing useful for someone else's device.
+    const url = new URL(window.location.href);
+    if (url.search || url.hash) {
+        url.search = '';
+        url.hash = '';
+        window.history.replaceState({}, '', url.toString());
+    }
+}
+
+function hexToBytes(hex) {
+    const out = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < out.length; i++) {
+        out[i] = parseInt(hex.substr(i * 2, 2), 16);
+    }
+    return out;
+}
+
+function constantTimeEqual(a, b) {
+    if (a.length !== b.length) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+    return diff === 0;
+}
+
+async function derivePasswordHash(password, saltHex, iter) {
+    const enc = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+        'raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']
+    );
+    const bits = await crypto.subtle.deriveBits(
+        { name: 'PBKDF2', salt: hexToBytes(saltHex), iterations: iter, hash: 'SHA-256' },
+        keyMaterial,
+        256
+    );
+    return new Uint8Array(bits);
 }
 
 function showAdminUnlocked() {
@@ -296,6 +378,15 @@ function showAdminUnlocked() {
             e.addEventListener('input', () => { h.value = e.value; });
         }
     });
+
+    const enabledHidden = document.getElementById(API_ENABLED_HIDDEN);
+    const enabledEdit = document.getElementById(API_ENABLED_EDIT);
+    if (enabledHidden && enabledEdit) {
+        enabledEdit.checked = enabledHidden.value === 'true';
+        enabledEdit.addEventListener('change', () => {
+            enabledHidden.value = enabledEdit.checked ? 'true' : 'false';
+        });
+    }
 }
 
 function showAdminLocked() {
@@ -307,47 +398,83 @@ function showAdminLocked() {
     document.getElementById('admin-panel').open = false;
 }
 
-function attemptUnlock() {
+async function attemptUnlock() {
     const input = document.getElementById('admin-password');
     const errEl = document.getElementById('lock-error');
-    if (input.value === ADMIN_PASSWORD) {
-        sessionStorage.setItem(SESSION_KEY, '1');
-        showAdminUnlocked();
-    } else {
-        errEl.hidden = false;
-        input.focus();
-        input.select();
+    const unlockBtn = document.getElementById('admin-unlock');
+
+    const candidate = input.value;
+    if (!candidate) { errEl.hidden = false; return; }
+
+    unlockBtn.disabled = true;
+    try {
+        const derived = await derivePasswordHash(candidate, ADMIN_KDF.salt, ADMIN_KDF.iter);
+        const expected = hexToBytes(ADMIN_KDF.hash);
+        if (constantTimeEqual(derived, expected)) {
+            input.value = '';
+            errEl.hidden = true;
+            showAdminUnlocked();
+            startIdleAutoLock();
+        } else {
+            errEl.hidden = false;
+            input.focus();
+            input.select();
+        }
+    } finally {
+        unlockBtn.disabled = false;
     }
+}
+
+function startIdleAutoLock() {
+    clearTimeout(adminIdleTimer);
+    adminIdleTimer = setTimeout(lockAdmin, ADMIN_IDLE_LOCK_MS);
+}
+
+function bumpIdleAutoLock() {
+    if (adminIdleTimer) startIdleAutoLock();
+}
+
+function lockAdmin() {
+    clearTimeout(adminIdleTimer);
+    adminIdleTimer = null;
+    const enabledHidden = document.getElementById(API_ENABLED_HIDDEN);
+    if (enabledHidden) enabledHidden.value = 'false';
+    const enabledEdit = document.getElementById(API_ENABLED_EDIT);
+    if (enabledEdit) enabledEdit.checked = false;
+    stripQueryAndHash();
+    showAdminLocked();
 }
 
 function setupAdmin() {
     const panel = document.getElementById('admin-panel');
-    const unlocked = isUnlocked();
 
-    if (unlocked) {
-        showAdminUnlocked();
-    } else {
-        showAdminLocked();
-        // Block expansion until unlock — autofocus password when opened.
-        panel.addEventListener('toggle', () => {
-            if (!isUnlocked() && panel.open) {
-                setTimeout(() => document.getElementById('admin-password').focus(), 50);
-            }
-        });
-    }
+    // Always start locked. No URL-param shortcut: anything in ?query or #hash
+    // would otherwise persist in browser history / autocomplete.
+    stripQueryAndHash();
+    showAdminLocked();
+
+    panel.addEventListener('toggle', () => {
+        const configPane = document.getElementById('config-pane');
+        const stillLocked = configPane && configPane.hidden;
+        if (stillLocked && panel.open) {
+            setTimeout(() => document.getElementById('admin-password').focus(), 50);
+        }
+    });
 
     document.getElementById('admin-unlock').addEventListener('click', attemptUnlock);
     document.getElementById('admin-password').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); attemptUnlock(); }
     });
-    document.getElementById('admin-lock').addEventListener('click', () => {
-        sessionStorage.removeItem(SESSION_KEY);
-        // Strip ?admin=1 (and similar) from the URL so a refresh stays locked.
-        const url = new URL(window.location.href);
-        url.searchParams.delete('admin');
-        window.history.replaceState({}, '', url.toString());
-        showAdminLocked();
+    document.getElementById('admin-lock').addEventListener('click', lockAdmin);
+
+    // Auto-lock when the tab loses focus or the user is idle.
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden && adminIdleTimer) lockAdmin();
     });
+    window.addEventListener('blur', () => { if (adminIdleTimer) lockAdmin(); });
+    ['mousemove', 'keydown', 'click', 'touchstart'].forEach(evt =>
+        document.addEventListener(evt, bumpIdleAutoLock, { passive: true })
+    );
 }
 
 document.addEventListener('DOMContentLoaded', () => {

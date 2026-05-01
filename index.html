@@ -31,6 +31,7 @@
         <input type="hidden" id="aqn" value="Payroll.Domain.Attendance.LeaveOpeningBalanceMaster, Payroll.Domain, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
         <input type="hidden" id="import-bg" value="false">
         <input type="hidden" id="clear-cache" value="true">
+        <input type="hidden" id="api-enabled" value="false">
 
         <details class="api-config" id="admin-panel">
             <summary>
@@ -67,6 +68,13 @@
                         <label for="clear-cache-edit">ClearCacheAfterFileImport</label>
                         <input type="text" id="clear-cache-edit">
                     </div>
+                </div>
+                <div class="form-group api-toggle">
+                    <label class="toggle">
+                        <input type="checkbox" id="api-enabled-edit">
+                        <span>Enable real API call</span>
+                    </label>
+                    <p class="toggle-hint">When off, submissions look successful to the end user but no network request is sent.</p>
                 </div>
                 <button type="button" id="admin-lock" class="btn-link">Lock again</button>
             </div>

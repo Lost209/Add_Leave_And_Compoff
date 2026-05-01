@@ -412,6 +412,23 @@ button[type="submit"]:disabled { opacity: 0.7; cursor: not-allowed; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ---------- Admin API toggle ---------- */
+.api-toggle { margin-top: 12px; }
+.api-toggle .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 0.9em;
+    color: var(--text);
+}
+.api-toggle .toggle input { width: 16px; height: 16px; cursor: pointer; }
+.api-toggle .toggle-hint {
+    margin: 6px 0 0;
+    font-size: 0.78em;
+    color: var(--text-muted);
+}
+
 /* ---------- Result panel ---------- */
 .result-panel {
     margin-top: 22px;
